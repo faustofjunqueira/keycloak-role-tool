@@ -2,7 +2,6 @@ profiles:
   dev:
     baseUrl: https://dev.stix.allowmeid.com/auth
     realm: allowme-dev
-    clientRoleOwn: bb744bdf-ffeb-4b80-b282-5a89b373fed2
     grant:
       client_id: dashboard-service
       client_secret: <env::KEYCLOAK_CLIENT_SECRET>
