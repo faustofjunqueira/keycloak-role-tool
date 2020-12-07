@@ -1,0 +1,26 @@
+profiles:
+  dev:
+    baseUrl: https://dev.stix.allowmeid.com/auth
+    realm: allowme-dev
+    clientRoleOwn: bb744bdf-ffeb-4b80-b282-5a89b373fed2
+    grant:
+      client_id: dashboard-service
+      client_secret: <env::KEYCLOAK_CLIENT_SECRET>
+      grant_type: client_credentials
+
+roles:
+  Realm:
+    - name: FullAccess
+      roles:
+        - <dashboard-service>FullAccess
+
+  # dashboard-service:
+  #   - name: FullAccess
+  #     roles:
+
+  #       # Users
+  #       - name: User:ReadAll
+  #         roles:
+  #           - User:ReadTimeBetweenAction
+  #           - User:ReadRealmEventCollect
+  #           - <dashboard-ui>Admin:Customer:Create
