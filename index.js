@@ -4,9 +4,6 @@ const { program } = require("commander");
 const path = require("path");
 const { createRoles } = require("./src/execution");
 
-// TODO: Criar Clients
-// TODO: Permitir colocar nas composites, roles de outros clientes
-// TODO: Perimitir colocar roles no realm
 // TODO: Fazer documentação
 
 // Configure logs
@@ -23,6 +20,7 @@ program
   .option("-f, --file <file>", "input file in YAML")
   .option("-p, --profile <profile>", "input file in YAML", "default")
   .option("-r, --reset", "reset all registers", false)
+  .option("--drop", "drop all registers", false)
   .option("--verbose", "show error detail");
 
 program.parse(process.argv);
@@ -31,7 +29,7 @@ program.parse(process.argv);
   try {
     if (program.file) {
       const pathFile = path.resolve("./", program.file);
-      await createRoles(pathFile, program.profile, program.reset);
+      await createRoles(pathFile, program.profile, program.reset, program.drop);
     } else {
       throw new ReferenceError("File not found!");
     }
@@ -41,7 +39,7 @@ program.parse(process.argv);
       logger.error(e.message);
       e.config && console.log(e.config);
       e.baseURL && console.log(e.baseURL);
-      e.stack && console.log(e.stack);
+      console.log(e.stack);
     }
   }
   console.log("\n\n[Ctrl+C] to finish...");

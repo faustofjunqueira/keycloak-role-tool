@@ -9,7 +9,7 @@ const { loadProfiles } = require("./profile");
 const logger = getLogger("EXECUTION");
 
 class CreateRolesProcess {
-  constructor(spinner, kc, clients, clientName, roles, reset) {
+  constructor(spinner, kc, clients, clientName, roles, reset, drop) {
     this.kc = kc;
     this.clients = clients;
     this.clientOwnId = clientName === "realm" ? null : clients[clientName];
@@ -17,6 +17,7 @@ class CreateRolesProcess {
     this.reset = reset;
     this.clientName = clientName;
     this.spinner = spinner;
+    this.drop = drop;
 
     this.regexRole = /^<([A-Za-z0-9\-_]+)>(.+)/;
   }
@@ -26,10 +27,12 @@ class CreateRolesProcess {
   }
 
   async run() {
-    // TODO: use mergeTool == true
-    if (this.reset) {
+    if (this.reset || this.drop) {
       this.log("Deleting all: " + this.clientName);
       await this.deleteAll();
+    }
+    if(this.drop) {
+      return true;
     }
     const updatedActions = [];
     updatedActions.push(await this.insertAndRemoveRoles());
@@ -74,8 +77,7 @@ class CreateRolesProcess {
   }
 
   deleteAll() {
-    return this.kc.role
-      .get(this.clientOwnId)
+    return this.getAllRoles(this.clientOwnId)
       .then((remoteRoles) =>
         Promise.all(
           remoteRoles.map(({ name }) =>
@@ -90,7 +92,7 @@ class CreateRolesProcess {
       name,
       attributes: { mergeTool: ["true"] },
     }));
-    const remoteRoles = await this.kc.role.get(this.clientOwnId);
+    const remoteRoles = await this.getAllRoles(this.clientOwnId);
     const rolesToInsert = _.differenceBy(localRoles, remoteRoles, "name");
     const rolesToRemove = _.differenceBy(remoteRoles, localRoles, "name");
 
@@ -128,7 +130,7 @@ class CreateRolesProcess {
   async applyComposites() {
     const allClientRoles = {
       [this.clientOwnId]: this.indexRoles(
-        await this.kc.role.get(this.clientOwnId)
+        await this.getAllRoles(this.clientOwnId)
       ),
     };
 
@@ -234,16 +236,23 @@ class CreateRolesProcess {
     const savedRoles = await this.kc.role.create(this.clientOwnId, {
       name: roleName,
     });
-    console.log(savedRoles);
     await this.kc.role.update(this.clientOwnId, roleName, {
       ...savedRoles,
       ...role,
     });
   }
+
+  async getAllRoles(idOfClient) {
+    const lazyRoles = await this.kc.role.get(idOfClient);
+    const roles = await Promise.all(
+      lazyRoles.map(({name}) => this.kc.role.get(idOfClient, name))
+    );
+    return roles.filter(({attributes}) => attributes && Object.keys(attributes).includes('mergeTool'))
+  }
 }
 
 class ExecutionProcess {
-  constructor(pathFile, profileName, reset) {
+  constructor(pathFile, profileName, reset, drop) {
     const fileData = loadFile(pathFile);
     if (!fileData.profiles) {
       throw new ReferenceError("No profiles found in file");
@@ -263,6 +272,7 @@ class ExecutionProcess {
     this.roles = roles;
     this.setKeyCloakData(loadProfiles(profileInfo));
     this.reset = reset;
+    this.drop = drop;
   }
 
   setKeyCloakData(keycloak) {
@@ -284,10 +294,10 @@ class ExecutionProcess {
     // Realm deve ser o ultimo
     const clientIds = Object.entries(this.roles).sort(
       ([clientNameA], [clientNameB]) => {
-        if (clientNameA === "realm") {
+        if (clientNameA.toLowerCase() === "realm") {
           return 1;
         }
-        if (clientNameB === "realm") {
+        if (clientNameB.toLowerCase() === "realm") {
           return -1;
         }
         return 0;
@@ -303,7 +313,8 @@ class ExecutionProcess {
           this.clients,
           clientName.toLowerCase(),
           roles,
-          this.reset
+          this.reset,
+          this.drop
         ).run();
         spinner.prefixText = `Finish client id ${clientName}`
         if (result) {
@@ -326,8 +337,8 @@ class ExecutionProcess {
   }
 }
 
-async function createRoles(pathFile, profileName, reset) {
-  await new ExecutionProcess(pathFile, profileName, reset).run();
+async function createRoles(pathFile, profileName, reset, drop) {
+  await new ExecutionProcess(pathFile, profileName, reset, drop).run();
 }
 
 exports.createRoles = createRoles;

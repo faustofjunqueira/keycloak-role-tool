@@ -14,13 +14,13 @@ roles:
       roles:
         - <dashboard-service>FullAccess
 
-  # dashboard-service:
-  #   - name: FullAccess
-  #     roles:
+  dashboard-service:
+    - name: FullAccess
+      roles:
 
-  #       # Users
-  #       - name: User:ReadAll
-  #         roles:
-  #           - User:ReadTimeBetweenAction
-  #           - User:ReadRealmEventCollect
-  #           - <dashboard-ui>Admin:Customer:Create
+        # Users
+        - name: User:ReadAll
+          roles:
+            - User:ReadTimeBetweenAction
+            - User:ReadRealmEventCollect
+            - <dashboard-ui>Admin:Customer:Create

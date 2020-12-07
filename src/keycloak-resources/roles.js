@@ -10,9 +10,9 @@ class KCRoles {
     return `/admin/realms/${this.kc.realm}/roles${suffix}`;
   }
 
-  async get(idOfClient) {
+  async get(idOfClient, roleName) {
     const response = await this.kc.request.get(
-      this.url(idOfClient)
+      this.url(idOfClient,roleName ? "/"+roleName : "")
     );
     return response.data;
   }
