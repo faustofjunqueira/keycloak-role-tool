@@ -21,6 +21,7 @@ program
   .option("-p, --profile <profile>", "input file in YAML", "default")
   .option("-r, --reset", "reset all registers", false)
   .option("--drop", "drop all registers", false)
+  .option("--force-drop", "drop even all registers", false)
   .option("--verbose", "show error detail");
 
 program.parse(process.argv);
@@ -29,7 +30,7 @@ program.parse(process.argv);
   try {
     if (program.file) {
       const pathFile = path.resolve("./", program.file);
-      await createRoles(pathFile, program.profile, program.reset, program.drop);
+      await createRoles(pathFile, program.profile, program.reset, program.drop, program.forceDrop);
     } else {
       throw new ReferenceError("File not found!");
     }

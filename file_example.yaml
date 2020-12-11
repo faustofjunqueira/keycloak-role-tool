@@ -1,25 +1,20 @@
 profiles:
   dev:
-    baseUrl: https://dev.stix.allowmeid.com/auth
-    realm: allowme-dev
+    baseUrl: http://localhost:8180/auth
+    realm: questionario
     grant:
-      client_id: dashboard-service
-      client_secret: <env::KEYCLOAK_CLIENT_SECRET>
+      client_id: questionario-service
+      client_secret: c2f9345b-0561-431e-abf8-09fcd691cfa1
       grant_type: client_credentials
 
 roles:
-  Realm:
-    - name: FullAccess
-      roles:
-        - <dashboard-service>FullAccess
-
-  dashboard-service:
+  questionario-service:
     - name: FullAccess
       roles:
 
         # Users
         - name: User:ReadAll
           roles:
-            - User:ReadTimeBetweenAction
-            - User:ReadRealmEventCollect
-            - <dashboard-ui>Admin:Customer:Create
+            - name: User:ReadTimeBetweenAction
+              description: Oi mundo cao
+            # - User:ReadRealmEventCollect

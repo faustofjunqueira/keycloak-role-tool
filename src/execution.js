@@ -9,7 +9,7 @@ const { loadProfiles } = require("./profile");
 const logger = getLogger("EXECUTION");
 
 class CreateRolesProcess {
-  constructor(spinner, kc, clients, clientName, roles, reset, drop) {
+  constructor(spinner, kc, clients, clientName, roles, reset, drop, forceDrop) {
     this.kc = kc;
     this.clients = clients;
     this.clientOwnId = clientName === "realm" ? null : clients[clientName];
@@ -18,6 +18,7 @@ class CreateRolesProcess {
     this.clientName = clientName;
     this.spinner = spinner;
     this.drop = drop;
+    this.forceDrop = forceDrop;
 
     this.regexRole = /^<([A-Za-z0-9\-_]+)>(.+)/;
   }
@@ -27,11 +28,11 @@ class CreateRolesProcess {
   }
 
   async run() {
-    if (this.reset || this.drop) {
+    if (this.reset || this.drop || this.forceDrop) {
       this.log("Deleting all: " + this.clientName);
       await this.deleteAll();
     }
-    if(this.drop) {
+    if (this.drop || this.forceDrop) {
       return true;
     }
     const updatedActions = [];
@@ -48,15 +49,30 @@ class CreateRolesProcess {
     return roles.reduce((tot, cur) => ({ ...tot, [cur.name]: cur }), {});
   }
 
+  createRolesDef(role) {
+    role = typeof role === "string" ? { name: role } : role;
+
+    // removendo roles
+    const { roles, ...roleToInsert } = role;
+    let attributes = { mergeTool: ["true"] };
+    if (roleToInsert.attributes) {
+      attributes = { ...roleToInsert.attributes, ...attributes };
+    }
+
+    return {
+      ...roleToInsert,
+      attributes,
+    };
+  }
+
   plainByRoles(roles) {
     return _.flattenDeep(
       roles.map((x) => {
-        if (typeof x === "string") {
-          return x;
+        let result = [this.createRolesDef(x)];
+        if (x.roles) {
+          result = [...this.plainByRoles(x.roles), ...result];
         }
-        const arr = this.plainByRoles(x.roles);
-        arr.push(x.name);
-        return arr;
+        return result;
       })
     );
   }
@@ -65,6 +81,7 @@ class CreateRolesProcess {
     return _.flattenDeep(
       roles
         .filter((x) => typeof x !== "string")
+        .filter((x) => x.roles)
         .map((x) => {
           const arr = this.plainByComposite(x.roles);
           arr.push({
@@ -77,31 +94,36 @@ class CreateRolesProcess {
   }
 
   deleteAll() {
-    return this.getAllRoles(this.clientOwnId)
-      .then((remoteRoles) =>
-        Promise.all(
-          remoteRoles.map(({ name }) =>
-            this.kc.role.delete(this.clientOwnId, name)
-          )
+    return this.getAllRoles(this.clientOwnId).then((remoteRoles) =>
+      Promise.all(
+        remoteRoles.map(({ name }) =>
+          this.kc.role.delete(this.clientOwnId, name)
         )
-      );
+      )
+    );
+  }
+
+  roleMustUpdate(remoteRoles) {
+    return (localrole) => {
+      const remoteRole = remoteRoles.find((x) => x.name === localrole.name);
+      return remoteRole.description != localrole.description;
+    };
   }
 
   async insertAndRemoveRoles() {
-    const localRoles = this.plainByRoles(this.roles).map((name) => ({
-      name,
-      attributes: { mergeTool: ["true"] },
-    }));
+    const localRoles = this.plainByRoles(this.roles);
     const remoteRoles = await this.getAllRoles(this.clientOwnId);
     const rolesToInsert = _.differenceBy(localRoles, remoteRoles, "name");
     const rolesToRemove = _.differenceBy(remoteRoles, localRoles, "name");
+    const rolesToUpdate = _.intersectionBy(localRoles, remoteRoles, "name");
 
     // Removendo
     await Promise.all(
       rolesToRemove
         .filter((r) => !this.regexRole.test(r.name))
         .map((r) => {
-          return this.delete(this.clientOwnId, r.name)
+          return this.kc.role
+            .delete(this.clientOwnId, r.name)
             .then(() => this.log("Deleted role " + r.name + " with success"))
             .catch(() =>
               logger.error("Deleted role " + r.name + " with error")
@@ -115,16 +137,27 @@ class CreateRolesProcess {
         .filter((r) => !this.regexRole.test(r.name))
         .map((r) => {
           return this.insertRoles(r)
-            .then(() =>
-              this.log("Inserted role " + r.name + " with success")
-            )
+            .then(() => this.log("Inserted role " + r.name + " with success"))
             .catch(() =>
               logger.error("Inserted role " + r.name + " with error")
             );
         })
     );
 
-    return rolesToRemove.length || rolesToInsert.length;
+    // Atualizando
+    await Promise.all(
+      rolesToUpdate
+        .filter(this.roleMustUpdate(remoteRoles))
+        .map((r) => {
+          return this.kc.role.update(this.clientOwnId, r.name, r)
+            .then(() => this.log("Updated role " + r.name + " with success"))
+            .catch(() =>
+              logger.error("Updated role " + r.name + " with error")
+            );
+        })
+    );
+    console.log(rolesToUpdate.filter(this.roleMustUpdate(remoteRoles)));
+    return rolesToRemove.length || rolesToInsert.length || rolesToUpdate.length;
   }
 
   async applyComposites() {
@@ -244,15 +277,21 @@ class CreateRolesProcess {
 
   async getAllRoles(idOfClient) {
     const lazyRoles = await this.kc.role.get(idOfClient);
+    if (this.forceDrop) {
+      return lazyRoles;
+    }
     const roles = await Promise.all(
-      lazyRoles.map(({name}) => this.kc.role.get(idOfClient, name))
+      lazyRoles.map(({ name }) => this.kc.role.get(idOfClient, name))
     );
-    return roles.filter(({attributes}) => attributes && Object.keys(attributes).includes('mergeTool'))
+    return roles.filter(
+      ({ attributes }) =>
+        attributes && Object.keys(attributes).includes("mergeTool")
+    );
   }
 }
 
 class ExecutionProcess {
-  constructor(pathFile, profileName, reset, drop) {
+  constructor(pathFile, profileName, reset, drop, forceDrop) {
     const fileData = loadFile(pathFile);
     if (!fileData.profiles) {
       throw new ReferenceError("No profiles found in file");
@@ -273,6 +312,7 @@ class ExecutionProcess {
     this.setKeyCloakData(loadProfiles(profileInfo));
     this.reset = reset;
     this.drop = drop;
+    this.forceDrop = forceDrop;
   }
 
   setKeyCloakData(keycloak) {
@@ -305,7 +345,10 @@ class ExecutionProcess {
     );
 
     for (let [clientName, roles] of clientIds) {
-      const spinner = ora({prefixText: `Processing client id ${clientName}`, text: "Starting"}).start();
+      const spinner = ora({
+        prefixText: `Processing client id ${clientName}`,
+        text: "Starting",
+      }).start();
       try {
         const result = await new CreateRolesProcess(
           spinner,
@@ -314,9 +357,10 @@ class ExecutionProcess {
           clientName.toLowerCase(),
           roles,
           this.reset,
-          this.drop
+          this.drop,
+          this.forceDrop
         ).run();
-        spinner.prefixText = `Finish client id ${clientName}`
+        spinner.prefixText = `Finish client id ${clientName}`;
         if (result) {
           spinner.succeed(`All updated!`);
         } else {
@@ -337,8 +381,14 @@ class ExecutionProcess {
   }
 }
 
-async function createRoles(pathFile, profileName, reset, drop) {
-  await new ExecutionProcess(pathFile, profileName, reset, drop).run();
+async function createRoles(pathFile, profileName, reset, drop, forceDrop) {
+  await new ExecutionProcess(
+    pathFile,
+    profileName,
+    reset,
+    drop,
+    forceDrop
+  ).run();
 }
 
 exports.createRoles = createRoles;
