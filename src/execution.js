@@ -156,7 +156,6 @@ class CreateRolesProcess {
             );
         })
     );
-    console.log(rolesToUpdate.filter(this.roleMustUpdate(remoteRoles)));
     return rolesToRemove.length || rolesToInsert.length || rolesToUpdate.length;
   }
 
